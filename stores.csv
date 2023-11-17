@@ -1,0 +1,6 @@
+id,creation_time,is_food,store_name,city,top_store
+420,2019-07-23,true,Burger_que,TAR,false
+421,2019-07-23,true,MACDONALDS,CAN,true
+425,2016-07-23,false,Chanel,GRA,false
+120,2015-07-23,true,SPAR,MAD,true
+3321,2015-07-23,false,CAR,BCN,true
