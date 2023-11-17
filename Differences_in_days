@@ -1,0 +1,27 @@
+--Get the difference in days between an order and
+--the previous order that the same customer placed.
+
+--Looking for days difference. In order to exclude duplicates of days I am making flags (duble) to compare in the next query.
+--To set first row intact using flag r
+WITH prep AS(
+    SELECT customer_id,
+            id,
+            activation_time,
+               EXTRACT(days FROM (activation_time)- COALESCE(LAG(activation_time) OVER(ORDER BY activation_time ASC),activation_time))
+            as  days_since_last_order,
+            LAG(activation_time) OVER(ORDER BY activation_time ASC) as duble,
+            ROW_NUMBER () OVER(ORDER BY activation_time ASC) as r
+            
+    FROM lastclosedmonth.c_orders
+    WHERE customer_id=5842
+    ORDER BY activation_time ASC
+    )
+
+    
+    SELECT customer_id,
+            id,
+            activation_time,
+            days_since_last_order
+    FROM prep 
+    WHERE (activation_time!= duble OR r=1)
+    ORDER BY activation_time ASC;
