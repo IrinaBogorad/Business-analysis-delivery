@@ -1,0 +1,73 @@
+--Task to built a report of the previous month (last closed month), that
+--includes the following information.
+
+-- Create temporary variables with current month, year and city. 
+--In the query below I use only month parameter consider that set has one year period of time, but 
+--certanly in a real data we must use both .
+
+CREATE TEMP TABLE tmp_variables AS SELECT 
+   DATE_PART(month,DATE_TRUNC('month',TO_DATE('2023-08-23 20:06:01', 'YYYY-MM-DD HH24:MI:SS'))- interval '1 month') AS month_date,
+   DATE_PART(year, TO_DATE('2023-08-23 20:06:01', 'YYYY-MM-DD HH24:MI:SS')) as year_date,
+   'MAD' AS city_name;
+
+SELECT 
+-- Count total number of orders
+        COUNT(id) AS total_orders,
+--Count average spend in euros
+        ROUND(AVG(total_cost_eur),1) AS avg_spend,
+
+-- Total number of orders coming from food partners
+        (SELECT COUNT(o.id) 
+        FROM lastclosedmonth.orders as o
+        JOIN lastclosedmonth.stores as s
+        ON o.store_id =s.id
+        WHERE s.is_food=TRUE AND
+        (DATE_PART(month, o.start_time)=(SELECT tmp_variables.month_date FROM  tmp_variables) AND
+        o.city=(SELECT tmp_variables.city_name FROM  tmp_variables))) AS food_partner_orders ,
+
+--Share of orders that were delivered in less than 45 minutes
+        (SELECT CAST((SUM(r)*1.0/COUNT(id)) AS DECIMAL(5,2))  
+        FROM (SELECT id,  
+        CASE WHEN (EXTRACT(hour FROM (o.end_time-o.start_time))<1 AND EXTRACT(minute FROM (o.end_time-o.start_time))<=45) THEN 1
+         ELSE 0 END as r
+        FROM lastclosedmonth.orders as o
+        WHERE DATE_PART(month, o.start_time)=(SELECT tmp_variables.month_date FROM  tmp_variables) AND
+        o.city=(SELECT tmp_variables.city_name FROM  tmp_variables))) AS under_45mins_orders,
+
+--Share of orders coming from top food stores
+        ROUND((SELECT count(o.*)
+        FROM lastclosedmonth.orders as o
+        JOIN lastclosedmonth.stores as s
+        ON o.store_id =s.id
+        WHERE (s.is_food=TRUE AND s.top_store=TRUE) AND
+              DATE_PART(month, o.start_time)=(SELECT tmp_variables.month_date FROM  tmp_variables) AND
+              o.city=(SELECT tmp_variables.city_name FROM  tmp_variables)
+        )*1.0 /total_orders
+        ,2) AS top_store_orders,
+
+--Number of New Customers this month
+        (SELECT COUNT(DISTINCT(c.id)) 
+        FROM lastclosedmonth.orders as o
+        JOIN lastclosedmonth.customers as c
+        ON c.id=o.customer_id
+        WHERE DATE_PART(month, c.sign_up_time)=(SELECT tmp_variables.month_date FROM  tmp_variables) AND
+        (DATE_PART(month, o.start_time)=(SELECT tmp_variables.month_date FROM  tmp_variables) AND
+              o.city=(SELECT tmp_variables.city_name FROM  tmp_variables))) as new_customers,
+        
+--AMORU Average monthly orders by recurrent users
+        (SELECT 
+        (AVG(COUNT(curent.id)) over(PARTITION BY DATE_PART(month, curent.start_time))/ count(DISTINCT(previous.customer_id))) as t
+        FROM lastclosedmonth.orders as curent
+        LEFT JOIN lastclosedmonth.orders as previous
+        ON previous.customer_id=curent.customer_id
+        WHERE DATE_PART(month, previous.start_time)=DATE_PART(month,ADD_MONTHS(curent.start_time,-1)) AND
+        curent.city=(SELECT tmp_variables.city_name FROM  tmp_variables)
+
+        GROUP BY  DATE_PART(month, curent.start_time)
+        HAVING DATE_PART(month, curent.start_time)=(SELECT tmp_variables.month_date FROM  tmp_variables)
+
+        ) as amoru
+
+FROM lastclosedmonth.orders
+WHERE DATE_PART(month, lastclosedmonth.orders.start_time)=(SELECT tmp_variables.month_date FROM  tmp_variables)
+AND city=(SELECT tmp_variables.city_name FROM  tmp_variables);
