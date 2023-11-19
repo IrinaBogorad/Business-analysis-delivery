@@ -1,0 +1,48 @@
+-- Build one SQL query to create a cohort of Signup to First Order and
+--show the result. The objective of this cohort is to see, out of the users that signed up
+--in Week N, how many did their first order in Week N+1, N+2, N+3...
+
+-- Cast registration date to week format
+WITH gr_week AS(
+    SELECT  
+        DATE_PART(week, registration_date) as signup_cohort_week,
+        id, 
+        first_order_id
+    FROM lastclosedmonth.users
+    ORDER BY signup_cohort_week ASC
+),
+-- Find first date of customer activity
+activ_users as(
+    SELECT customer_id, MIN(activation_time) as min_activ_time, id 
+    FROM lastclosedmonth.c_orders
+    GROUP BY customer_id, id
+    ORDER BY customer_id 
+),
+--Count number of users given on sign up weeks
+cohort_size as(
+    SELECT signup_cohort_week, count(id) as num_users
+    FROM gr_week
+    GROUP BY signup_cohort_week
+    ORDER BY signup_cohort_week
+),
+--Make connection between sign up weeks and week when first order was placed. Find number of users given on week of first order
+reten_rate as(
+    SELECT g_w.signup_cohort_week as cohort_week, 
+            DATE_PART(week,a_u.min_activ_time)-g_w.signup_cohort_week as number_week,
+            COUNT(g_w.id) AS cohort_size
+    FROM activ_users as a_u 
+    LEFT JOIN gr_week as g_w 
+    on a_u.id=g_w.first_order_id AND a_u.customer_id=g_w.id
+    GROUP BY 1,2
+ )
+ --Assembling a table
+SELECT reten_rate.cohort_week,
+        cohort_size.num_users,
+        reten_rate.number_week,
+        ROUND(reten_rate.cohort_size*100.0/cohort_size.num_users,2) as persent
+
+FROM reten_rate
+LEFT JOIN cohort_size
+on reten_rate.cohort_week=cohort_size.signup_cohort_week
+WHERE reten_rate.cohort_week IS NOT NULL
+ORDER BY 1,3;
